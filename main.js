@@ -1051,8 +1051,6 @@ function boot() {
   window.setTimeout(() => safeInvalidateMapSize(), 80);
 }
 
-boot();
-
 // --- Mobile popup / responsive layout ---
 let mobileUiActive = false;
 let upgradesMount = null;
@@ -1113,3 +1111,5 @@ function applyMobilePanelsLayout() {
     safeInvalidateMapSize();
   }
 }
+
+boot();
