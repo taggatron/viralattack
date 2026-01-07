@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Viral Attack</title>
+
+    <!-- Leaflet (map) -->
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    />
+
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand__title">Viral Attack</div>
+        <div class="brand__subtitle">Plague-style prototype (web)</div>
+      </div>
+
+      <div class="stats" id="stats">
+        <div class="stat"><div class="stat__label">Mutation</div><div class="stat__value" id="stat-mp">0</div></div>
+        <div class="stat"><div class="stat__label">Infected</div><div class="stat__value" id="stat-infected">0</div></div>
+        <div class="stat"><div class="stat__label">Dead</div><div class="stat__value" id="stat-dead">0</div></div>
+        <div class="stat"><div class="stat__label">Cured</div><div class="stat__value" id="stat-cured">0</div></div>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="panel" aria-label="Controls">
+        <div class="panel__section">
+          <h2 class="panel__title">Pathogen</h2>
+
+          <div class="row">
+            <label class="radio">
+              <input type="radio" name="pathogen" value="bacteria" checked />
+              <span>Bacteria</span>
+            </label>
+            <label class="radio">
+              <input type="radio" name="pathogen" value="virus" />
+              <span>Virus</span>
+            </label>
+          </div>
+
+          <div class="hint" id="start-hint">Click the map to choose a starting location.</div>
+          <div class="kv">
+            <div class="kv__k">Start</div>
+            <div class="kv__v" id="start-coords">Not set</div>
+          </div>
+
+          <div class="row">
+            <button class="btn" id="btn-start" disabled>Start Simulation</button>
+            <button class="btn btn--ghost" id="btn-reset">Reset</button>
+          </div>
+        </div>
+
+        <div class="panel__section">
+          <h2 class="panel__title">Upgrades</h2>
+          <div class="tabs" role="tablist" aria-label="Upgrade categories">
+            <button class="tab tab--active" id="tab-transmission" role="tab" aria-selected="true">Transmission</button>
+            <button class="tab" id="tab-symptoms" role="tab" aria-selected="false">Symptoms</button>
+          </div>
+
+          <div class="upgradeList" id="upgrade-list"></div>
+          <div class="hint">Collect mutation points by clicking purple markers on the map.</div>
+        </div>
+
+        <div class="panel__section">
+          <h2 class="panel__title">Traits</h2>
+          <div class="traits">
+            <div class="trait"><div class="trait__label">Infectivity</div><div class="trait__bar"><div class="trait__fill" id="bar-infectivity"></div></div></div>
+            <div class="trait"><div class="trait__label">Severity</div><div class="trait__bar"><div class="trait__fill" id="bar-severity"></div></div></div>
+            <div class="trait"><div class="trait__label">Lethality</div><div class="trait__bar"><div class="trait__fill" id="bar-lethality"></div></div></div>
+          </div>
+        </div>
+
+        <div class="panel__section">
+          <h2 class="panel__title">Notes</h2>
+          <p class="hint">
+            This is a lightweight prototype: it uses a simple global model (not country-by-country).
+            Your starting click sets the origin, and upgrades change the simulation rates.
+          </p>
+        </div>
+      </section>
+
+      <section class="mapWrap" aria-label="World map">
+        <div id="map" class="map"></div>
+        <div class="mapAttribution">
+          Map data © OpenStreetMap contributors
+        </div>
+      </section>
+    </main>
+
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>
