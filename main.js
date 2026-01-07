@@ -186,6 +186,8 @@ const state = {
   cureProgress: 0, // 0..1
 };
 
+let lastAnyAffordableUpgrade = false;
+
 function lerp(a, b, t) {
   return a + (b - a) * t;
 }
@@ -336,6 +338,9 @@ function resetGame() {
   computeTraits();
   updateUI();
 
+  lastAnyAffordableUpgrade = false;
+  closeMobilePanels(true);
+
   startMarker?.remove();
   startMarker = null;
 
@@ -347,6 +352,15 @@ function resetGame() {
   $("btn-start").disabled = true;
   $("start-coords").textContent = "Not set";
   $("start-hint").textContent = "Click the map to choose a starting location.";
+}
+
+function anyAffordableUpgrade() {
+  for (const category of Object.values(UPGRADES)) {
+    for (const u of category) {
+      if (canBuy(u)) return true;
+    }
+  }
+  return false;
 }
 
 function canBuy(upgrade) {
@@ -453,12 +467,25 @@ function updateUI() {
   updateCountryShading();
 
   renderUpgrades(activeTab);
+
+  // Mobile: if the player just gained enough MP to buy something, surface the upgrades/traits popup.
+  const affordableNow = anyAffordableUpgrade();
+  if (isMobileUiActive() && affordableNow && !lastAnyAffordableUpgrade) {
+    openMobilePanels();
+  }
+  lastAnyAffordableUpgrade = affordableNow;
 }
 
 // --- Map setup ---
 let map;
 let startMarker = null;
 const mutationMarkers = new Set();
+
+function syncTopbarHeightVar() {
+  const topbar = document.querySelector(".topbar");
+  const h = topbar?.offsetHeight ? Math.max(48, topbar.offsetHeight) : 62;
+  document.documentElement.style.setProperty("--topbar-h", `${h}px`);
+}
 
 let tileLayer = null;
 const TILE_STYLES = {
@@ -813,6 +840,15 @@ function initMap() {
   });
 }
 
+function safeInvalidateMapSize() {
+  if (!map) return;
+  try {
+    map.invalidateSize({ animate: false });
+  } catch {
+    // ignore
+  }
+}
+
 function setMapStyle(styleKey) {
   const style = TILE_STYLES[styleKey] ?? TILE_STYLES.osm;
   if (!map) return;
@@ -974,13 +1010,106 @@ function initUI() {
       setMapStyle(mapStyleSel.value);
     });
   }
+
+  // Mobile popup wiring
+  const openBtn = $("btn-mobile-panels");
+  const closeBtn = $("btn-mobile-panels-close");
+  const modal = $("mobilePanels");
+  openBtn?.addEventListener("click", () => openMobilePanels());
+  closeBtn?.addEventListener("click", () => closeMobilePanels());
+  modal?.addEventListener("click", (e) => {
+    if (e.target === modal) closeMobilePanels();
+  });
+
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeMobilePanels();
+  });
+
+  // Responsive sync (layout + map scaling)
+  let resizeTimer = null;
+  const onResize = () => {
+    window.clearTimeout(resizeTimer);
+    resizeTimer = window.setTimeout(() => {
+      syncTopbarHeightVar();
+      applyMobilePanelsLayout();
+      safeInvalidateMapSize();
+    }, 120);
+  };
+  window.addEventListener("resize", onResize);
+  window.addEventListener("orientationchange", onResize);
 }
 
 function boot() {
+  syncTopbarHeightVar();
   initMap();
   initUI();
+  applyMobilePanelsLayout();
   resetGame();
   setTab("transmission");
+
+  // One more invalidate after first paint so Leaflet sizes correctly on mobile.
+  window.setTimeout(() => safeInvalidateMapSize(), 80);
 }
 
 boot();
+
+// --- Mobile popup / responsive layout ---
+let mobileUiActive = false;
+let upgradesMount = null;
+let traitsMount = null;
+
+function isMobileUiActive() {
+  return mobileUiActive;
+}
+
+function openMobilePanels() {
+  if (!mobileUiActive) return;
+  const modal = $("mobilePanels");
+  if (!modal) return;
+  modal.setAttribute("aria-hidden", "false");
+  document.body.classList.add("modalOpen");
+}
+
+function closeMobilePanels(force = false) {
+  const modal = $("mobilePanels");
+  if (!modal) return;
+  const isOpen = modal.getAttribute("aria-hidden") === "false";
+  if (!isOpen && !force) return;
+  modal.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("modalOpen");
+}
+
+function applyMobilePanelsLayout() {
+  const upgrades = $("section-upgrades");
+  const traits = $("section-traits");
+  const modalBody = $("mobilePanelsBody");
+  const hud = document.querySelector(".mobileHud");
+
+  if (!upgrades || !traits || !modalBody) return;
+
+  const wantsMobile = window.matchMedia("(max-width: 900px)").matches;
+
+  if (wantsMobile && !mobileUiActive) {
+    upgradesMount = { parent: upgrades.parentElement, next: upgrades.nextSibling };
+    traitsMount = { parent: traits.parentElement, next: traits.nextSibling };
+
+    modalBody.appendChild(upgrades);
+    modalBody.appendChild(traits);
+
+    hud?.setAttribute("aria-hidden", "false");
+    mobileUiActive = true;
+    closeMobilePanels(true);
+    safeInvalidateMapSize();
+    return;
+  }
+
+  if (!wantsMobile && mobileUiActive) {
+    if (upgradesMount?.parent) upgradesMount.parent.insertBefore(upgrades, upgradesMount.next ?? null);
+    if (traitsMount?.parent) traitsMount.parent.insertBefore(traits, traitsMount.next ?? null);
+
+    hud?.setAttribute("aria-hidden", "true");
+    mobileUiActive = false;
+    closeMobilePanels(true);
+    safeInvalidateMapSize();
+  }
+}

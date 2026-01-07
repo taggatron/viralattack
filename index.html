@@ -86,7 +86,7 @@
           </div>
         </div>
 
-        <div class="panel__section">
+        <div class="panel__section" id="section-upgrades">
           <h2 class="panel__title">Upgrades</h2>
           <div class="tabs" role="tablist" aria-label="Upgrade categories">
             <button class="tab tab--active" id="tab-transmission" role="tab" aria-selected="true">Transmission</button>
@@ -97,7 +97,7 @@
           <div class="hint">Collect mutation points by clicking purple markers on the map.</div>
         </div>
 
-        <div class="panel__section">
+        <div class="panel__section" id="section-traits">
           <h2 class="panel__title">Traits</h2>
           <div class="traits">
             <div class="trait"><div class="trait__label">Infectivity</div><div class="trait__bar"><div class="trait__fill" id="bar-infectivity"></div></div></div>
@@ -122,6 +122,22 @@
         </div>
       </section>
     </main>
+
+    <div class="mobileHud" aria-hidden="true">
+      <button class="btn mobileHud__btn" id="btn-mobile-panels" aria-haspopup="dialog" aria-controls="mobilePanels" type="button">
+        Upgrades & Traits
+      </button>
+    </div>
+
+    <div class="mobileModal" id="mobilePanels" role="dialog" aria-modal="true" aria-label="Upgrades and traits" aria-hidden="true">
+      <div class="mobileModal__card" role="document">
+        <div class="mobileModal__header">
+          <div class="mobileModal__title">Upgrades & Traits</div>
+          <button class="btn btn--ghost mobileModal__close" id="btn-mobile-panels-close" type="button">Close</button>
+        </div>
+        <div class="mobileModal__body" id="mobilePanelsBody"></div>
+      </div>
+    </div>
 
     <script
       src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"

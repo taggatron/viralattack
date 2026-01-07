@@ -73,12 +73,15 @@ html, body {
   display: grid;
   grid-template-columns: 360px 1fr;
   height: calc(100vh - 62px);
+  height: calc(100svh - var(--topbar-h, 62px));
+  min-height: 0;
 }
 
 .panel {
   border-right: 1px solid var(--line);
   padding: 14px;
   overflow: auto;
+  min-height: 0;
 }
 
 .panel__section {
@@ -342,6 +345,7 @@ html, body {
 
 .mapWrap {
   position: relative;
+  min-height: 0;
 }
 
 .map {
@@ -370,12 +374,17 @@ html, body {
   width: 26px;
   height: 26px;
   transform: translate(-13px, -13px);
-  filter: drop-shadow(0 0 6px rgba(139, 92, 246, 0.45));
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(11, 16, 32, 0.72);
+  filter: drop-shadow(0 0 6px rgba(139, 92, 246, 0.35));
 }
 
 .dnaMarker svg {
-  width: 26px;
-  height: 26px;
+  width: 22px;
+  height: 22px;
 }
 
 .dnaMarker .dnaGlow {
@@ -498,6 +507,86 @@ html, body {
   .panel {
     border-right: 1px solid var(--line);
     border-bottom: none;
+  }
+}
+
+/* Mobile upgrades/traits popup (enabled on small screens) */
+.mobileHud {
+  position: fixed;
+  right: 14px;
+  bottom: 14px;
+  z-index: 5000;
+  display: none;
+}
+
+.mobileHud__btn {
+  padding: 10px 14px;
+}
+
+.mobileModal {
+  position: fixed;
+  inset: 0;
+  z-index: 6000;
+  display: none;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 14px;
+  background: rgba(11, 16, 32, 0.7);
+  backdrop-filter: blur(6px);
+}
+
+.mobileModal[aria-hidden="false"] {
+  display: flex;
+}
+
+.mobileModal__card {
+  width: min(520px, 100%);
+  max-height: min(78svh, 560px);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+
+.mobileModal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.16);
+}
+
+.mobileModal__title {
+  font-weight: 800;
+  letter-spacing: 0.2px;
+}
+
+.mobileModal__close {
+  padding: 8px 10px;
+}
+
+.mobileModal__body {
+  padding: 12px;
+  overflow: auto;
+}
+
+body.modalOpen {
+  overflow: hidden;
+}
+
+@media (max-width: 900px) {
+  .mobileHud {
+    display: flex;
+  }
+
+  /* Hide inline upgrades/traits; they are shown in the popup instead. */
+  .panel #section-upgrades,
+  .panel #section-traits {
+    display: none;
   }
 }
 
