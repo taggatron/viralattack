@@ -16,6 +16,22 @@
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
+    <div class="orientationNotice" role="status" aria-live="polite">
+      <div class="orientationNotice__card">
+        <div class="orientationNotice__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M8 3h8a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" stroke="rgba(233, 236, 245, 0.9)" stroke-width="2"/>
+            <path d="M10 19h4" stroke="rgba(139, 92, 246, 0.95)" stroke-width="2" stroke-linecap="round"/>
+            <path d="M4 12h2m12 0h2" stroke="rgba(139, 92, 246, 0.65)" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div>
+          <div class="orientationNotice__title">Rotate your phone</div>
+          <div class="orientationNotice__desc">This game is designed for landscape orientation.</div>
+        </div>
+      </div>
+    </div>
+
     <header class="topbar">
       <div class="brand">
         <div class="brand__title">Viral Attack</div>
@@ -24,6 +40,7 @@
 
       <div class="stats" id="stats">
         <div class="stat"><div class="stat__label">Mutation</div><div class="stat__value" id="stat-mp">0</div></div>
+        <div class="stat"><div class="stat__label">Days</div><div class="stat__value" id="stat-days">0</div></div>
         <div class="stat"><div class="stat__label">Infected</div><div class="stat__value" id="stat-infected">0</div></div>
         <div class="stat"><div class="stat__label">Dead</div><div class="stat__value" id="stat-dead">0</div></div>
         <div class="stat"><div class="stat__label">Cured</div><div class="stat__value" id="stat-cured">0</div></div>
@@ -50,6 +67,17 @@
           <div class="kv">
             <div class="kv__k">Start</div>
             <div class="kv__v" id="start-coords">Not set</div>
+          </div>
+
+          <div class="kv">
+            <div class="kv__k">Map</div>
+            <div class="kv__v">
+              <select class="select" id="map-style" aria-label="Map style">
+                <option value="osm" selected>Default</option>
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+              </select>
+            </div>
           </div>
 
           <div class="row">

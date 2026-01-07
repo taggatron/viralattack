@@ -40,6 +40,16 @@ async function reverseGeocodeCountry(lat, lng) {
 const NATURAL_EARTH_COUNTRIES_GEOJSON_URL =
   "https://cdn.jsdelivr.net/gh/nvkelso/natural-earth-vector@master/geojson/ne_110m_admin_0_countries.geojson";
 
+const TIME_LIMIT_DAYS = 365;
+const SECONDS_PER_DAY = 1; // 1 real second == 1 in-game day
+
+const MUTATION_POINT_TTL_MS = 12_000;
+
+const TRAVEL_PLANE_EVERY_DAYS = 7;
+const TRAVEL_BOAT_EVERY_DAYS = 11;
+const TRAVEL_PLANE_DURATION_MS = 5200;
+const TRAVEL_BOAT_DURATION_MS = 7800;
+
 const PATHOGEN_BASE = {
   bacteria: {
     infectivity: 0.22,
@@ -63,6 +73,8 @@ const UPGRADES = {
       desc: "+Infectivity (spreads easier in cities)",
       cost: 6,
       effects: { infectivity: +0.06 },
+      icon: "air",
+      iconAnim: "float",
     },
     {
       id: "air_2",
@@ -71,6 +83,8 @@ const UPGRADES = {
       cost: 10,
       requires: ["air_1"],
       effects: { infectivity: +0.09 },
+      icon: "air",
+      iconAnim: "float",
     },
     {
       id: "water_1",
@@ -78,6 +92,8 @@ const UPGRADES = {
       desc: "+Infectivity (spreads through water supply)",
       cost: 8,
       effects: { infectivity: +0.07 },
+      icon: "water",
+      iconAnim: "pulse",
     },
     {
       id: "animal_1",
@@ -85,6 +101,8 @@ const UPGRADES = {
       desc: "+Infectivity (zoonotic vectors)",
       cost: 7,
       effects: { infectivity: +0.05 },
+      icon: "animal",
+      iconAnim: "float",
     },
     {
       id: "drug_resist",
@@ -92,6 +110,8 @@ const UPGRADES = {
       desc: "-Cure progress (harder to eliminate)",
       cost: 12,
       effects: { cureSlow: 0.12 },
+      icon: "shield",
+      iconAnim: "pulse",
     },
   ],
   symptoms: [
@@ -101,6 +121,8 @@ const UPGRADES = {
       desc: "+Infectivity, +Severity",
       cost: 5,
       effects: { infectivity: +0.03, severity: +0.05 },
+      icon: "cough",
+      iconAnim: "float",
     },
     {
       id: "fever",
@@ -108,6 +130,8 @@ const UPGRADES = {
       desc: "+Severity",
       cost: 6,
       effects: { severity: +0.07 },
+      icon: "temp",
+      iconAnim: "pulse",
     },
     {
       id: "pneumonia",
@@ -116,6 +140,8 @@ const UPGRADES = {
       cost: 10,
       requires: ["cough"],
       effects: { severity: +0.09, lethality: +0.06 },
+      icon: "lungs",
+      iconAnim: "pulse",
     },
     {
       id: "organ_failure",
@@ -124,6 +150,8 @@ const UPGRADES = {
       cost: 16,
       requires: ["pneumonia"],
       effects: { lethality: +0.12, infectivity: -0.05, severity: +0.06 },
+      icon: "skull",
+      iconAnim: "pulse",
     },
   ],
 };
@@ -140,6 +168,7 @@ const state = {
 
   mp: 0,
   purchased: new Set(),
+  recentPurchases: new Set(),
 
   infectivity: 0,
   severity: 0,
@@ -152,8 +181,109 @@ const state = {
   dead: 0,
   cured: 0,
 
+  days: 0,
+
   cureProgress: 0, // 0..1
 };
+
+function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
+
+function lerpLatLng(a, b, t) {
+  return L.latLng(lerp(a.lat, b.lat, t), lerp(a.lng, b.lng, t));
+}
+
+function pickRandom(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function svgIcon(name) {
+  // Keep icons simple; use existing theme colors.
+  const stroke = "rgba(233, 236, 245, 0.92)";
+  const accent = "rgba(139, 92, 246, 0.95)";
+
+  if (name === "air") {
+    return `
+      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M3 9c2.5-2 5.5-2 8 0 2.5 2 5.5 2 10 0" stroke="${stroke}" stroke-width="2" stroke-linecap="round"/>
+        <path d="M3 13c2.5-2 5.5-2 8 0 2.5 2 5.5 2 10 0" stroke="${accent}" stroke-width="2" stroke-linecap="round"/>
+        <path d="M3 17c2.5-2 5.5-2 8 0 2.5 2 5.5 2 10 0" stroke="${stroke}" stroke-width="2" stroke-linecap="round"/>
+      </svg>`;
+  }
+
+  if (name === "water") {
+    return `
+      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 3s6 7 6 11a6 6 0 1 1-12 0c0-4 6-11 6-11Z" stroke="${accent}" stroke-width="2"/>
+        <path d="M9 14c.7 1.6 2.1 2.6 3.8 2.8" stroke="${stroke}" stroke-width="2" stroke-linecap="round"/>
+      </svg>`;
+  }
+
+  if (name === "animal") {
+    return `
+      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M7 12c0-2.8 2.2-5 5-5s5 2.2 5 5" stroke="${stroke}" stroke-width="2" stroke-linecap="round"/>
+        <path d="M6.5 14.5c1.3 3 3.6 4.5 5.5 4.5s4.2-1.5 5.5-4.5" stroke="${accent}" stroke-width="2" stroke-linecap="round"/>
+        <path d="M9 9 7 6M15 9l2-3" stroke="${stroke}" stroke-width="2" stroke-linecap="round"/>
+      </svg>`;
+  }
+
+  if (name === "shield") {
+    return `
+      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 3 19 6v6c0 5-3.5 8.6-7 9.9C8.5 20.6 5 17 5 12V6l7-3Z" stroke="${accent}" stroke-width="2"/>
+        <path d="M9 12h6" stroke="${stroke}" stroke-width="2" stroke-linecap="round"/>
+      </svg>`;
+  }
+
+  if (name === "cough") {
+    return `
+      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M9 7c0-2 1.5-4 4-4 2.6 0 4 1.8 4 4v4" stroke="${stroke}" stroke-width="2" stroke-linecap="round"/>
+        <path d="M7 14c0 3 2 7 5 7s5-4 5-7" stroke="${accent}" stroke-width="2" stroke-linecap="round"/>
+        <path d="M19 12c1 .2 2 .8 2 2s-1 1.8-2 2" stroke="${stroke}" stroke-width="2" stroke-linecap="round"/>
+      </svg>`;
+  }
+
+  if (name === "temp") {
+    return `
+      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M10 4a2 2 0 0 1 4 0v9.2a4 4 0 1 1-4 0V4Z" stroke="${stroke}" stroke-width="2"/>
+        <path d="M14 15a2 2 0 0 1-4 0" stroke="${accent}" stroke-width="2" stroke-linecap="round"/>
+      </svg>`;
+  }
+
+  if (name === "lungs") {
+    return `
+      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 3v8" stroke="${stroke}" stroke-width="2" stroke-linecap="round"/>
+        <path d="M12 11c-1.5-2.5-4-3.5-6-2-2 1.6-2 6 0 9 1.5 2.2 4.5 2.6 6 1" stroke="${accent}" stroke-width="2" stroke-linecap="round"/>
+        <path d="M12 11c1.5-2.5 4-3.5 6-2 2 1.6 2 6 0 9-1.5 2.2-4.5 2.6-6 1" stroke="${accent}" stroke-width="2" stroke-linecap="round"/>
+      </svg>`;
+  }
+
+  if (name === "skull") {
+    return `
+      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 3c4.4 0 8 3.3 8 7.5 0 3-1.8 5.6-4.5 6.7V21h-7v-3.8C5.8 16.1 4 13.5 4 10.5 4 6.3 7.6 3 12 3Z" stroke="${accent}" stroke-width="2"/>
+        <path d="M9.2 11.3h.01M14.8 11.3h.01" stroke="${stroke}" stroke-width="3" stroke-linecap="round"/>
+        <path d="M10 15c1 .8 3 .8 4 0" stroke="${stroke}" stroke-width="2" stroke-linecap="round"/>
+      </svg>`;
+  }
+
+  return `
+    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M6 12h12" stroke="${stroke}" stroke-width="2" stroke-linecap="round"/>
+      <path d="M12 6v12" stroke="${accent}" stroke-width="2" stroke-linecap="round"/>
+    </svg>`;
+}
+
+function iconClass(anim) {
+  if (anim === "pulse") return "upgrade__icon upgrade__icon--pulse";
+  if (anim === "float") return "upgrade__icon upgrade__icon--float";
+  return "upgrade__icon";
+}
 
 function computeTraits() {
   const base = PATHOGEN_BASE[state.pathogen];
@@ -187,16 +317,20 @@ function resetGame() {
   state.tickHandle = null;
   state.pointHandle = null;
 
+  stopTravelLoop();
+
   state.start = null;
   state.startCountry = null;
   state.startCountryCode = null;
   state.mp = 0;
   state.purchased = new Set();
+  state.recentPurchases = new Set();
 
   state.infected = 0;
   state.dead = 0;
   state.cured = 0;
   state.cureProgress = 0;
+  state.days = 0;
 
   state.pathogen = document.querySelector('input[name="pathogen"]:checked')?.value ?? "bacteria";
   computeTraits();
@@ -205,7 +339,7 @@ function resetGame() {
   startMarker?.remove();
   startMarker = null;
 
-  unselectCountryLayer();
+  clearCountryInfections();
 
   for (const m of mutationMarkers) m.remove();
   mutationMarkers.clear();
@@ -226,6 +360,13 @@ function buyUpgrade(upgrade) {
   if (!canBuy(upgrade)) return;
   state.mp -= upgrade.cost;
   state.purchased.add(upgrade.id);
+
+  state.recentPurchases.add(upgrade.id);
+  window.setTimeout(() => {
+    state.recentPurchases.delete(upgrade.id);
+    updateUI();
+  }, 650);
+
   computeTraits();
   updateUI();
 }
@@ -237,8 +378,16 @@ function renderUpgrades(category) {
   for (const u of UPGRADES[category]) {
     const card = document.createElement("div");
     card.className = "upgrade";
+    if (state.recentPurchases.has(u.id)) card.classList.add("upgrade--purchased");
 
     const left = document.createElement("div");
+    left.className = "upgrade__left";
+
+    const iconWrap = document.createElement("div");
+    iconWrap.className = iconClass(u.iconAnim);
+    iconWrap.innerHTML = svgIcon(u.icon);
+
+    const textWrap = document.createElement("div");
     const name = document.createElement("div");
     name.className = "upgrade__name";
     name.textContent = u.name;
@@ -252,13 +401,16 @@ function renderUpgrades(category) {
       const reqEl = document.createElement("div");
       reqEl.className = "upgrade__desc";
       reqEl.textContent = requires;
-      left.appendChild(name);
-      left.appendChild(desc);
-      left.appendChild(reqEl);
+      textWrap.appendChild(name);
+      textWrap.appendChild(desc);
+      textWrap.appendChild(reqEl);
     } else {
-      left.appendChild(name);
-      left.appendChild(desc);
+      textWrap.appendChild(name);
+      textWrap.appendChild(desc);
     }
+
+    left.appendChild(iconWrap);
+    left.appendChild(textWrap);
 
     const right = document.createElement("div");
     right.className = "upgrade__cta";
@@ -292,12 +444,13 @@ function updateBars() {
 
 function updateUI() {
   $("stat-mp").textContent = fmtInt(state.mp);
+  $("stat-days").textContent = `${fmtInt(state.days)}/${TIME_LIMIT_DAYS}`;
   $("stat-infected").textContent = fmtInt(state.infected);
   $("stat-dead").textContent = fmtInt(state.dead);
   $("stat-cured").textContent = fmtInt(state.cured);
   updateBars();
 
-  updateSelectedCountryShade();
+  updateCountryShading();
 
   renderUpgrades(activeTab);
 }
@@ -307,9 +460,30 @@ let map;
 let startMarker = null;
 const mutationMarkers = new Set();
 
+let tileLayer = null;
+const TILE_STYLES = {
+  osm: {
+    name: "Default",
+    url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    attribution: "© OpenStreetMap contributors",
+  },
+  light: {
+    name: "Light",
+    url: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+    attribution: "© OpenStreetMap contributors © CARTO",
+  },
+  dark: {
+    name: "Dark",
+    url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+    attribution: "© OpenStreetMap contributors © CARTO",
+  },
+};
+
 let countriesLayer = null;
-let selectedCountryLeafletLayer = null;
 const countriesByIso2 = new Map();
+const countryCentroidsByIso2 = new Map();
+const infectedCountries = new Map(); // iso2 -> { level: 0..1 }
+const shadedCountries = new Set();
 
 function defaultCountryStyle() {
   return {
@@ -319,7 +493,7 @@ function defaultCountryStyle() {
   };
 }
 
-function selectedCountryStyle(intensity01) {
+function infectedCountryStyle(intensity01) {
   const t = clamp01(intensity01);
   return {
     color: "#ef4444",
@@ -330,18 +504,56 @@ function selectedCountryStyle(intensity01) {
   };
 }
 
-function unselectCountryLayer() {
-  if (selectedCountryLeafletLayer) {
-    selectedCountryLeafletLayer.setStyle(defaultCountryStyle());
+function clearCountryInfections() {
+  for (const iso2 of shadedCountries) {
+    const layer = countriesByIso2.get(iso2);
+    if (layer) layer.setStyle(defaultCountryStyle());
   }
-  selectedCountryLeafletLayer = null;
+  shadedCountries.clear();
+  infectedCountries.clear();
 }
 
-function updateSelectedCountryShade() {
-  if (!selectedCountryLeafletLayer) return;
-  // Log scale: ~0 at tiny counts, ~1 at 100M infected
-  const intensity = clamp01(Math.log10(1 + state.infected) / 8);
-  selectedCountryLeafletLayer.setStyle(selectedCountryStyle(intensity));
+function infectCountry(iso2, seedLevel = 0.12, bumpGlobalInfected = true) {
+  if (!iso2) return;
+  const key = String(iso2).toUpperCase();
+  const current = infectedCountries.get(key);
+  const nextLevel = Math.max(current?.level ?? 0, seedLevel);
+  infectedCountries.set(key, { level: nextLevel });
+
+  const layer = countriesByIso2.get(key);
+  if (layer) shadedCountries.add(key);
+
+  if (bumpGlobalInfected) {
+    state.infected = Math.min(state.population, state.infected + 50_000);
+  }
+}
+
+function tickCountryInfections(dtDays) {
+  if (infectedCountries.size === 0) return;
+
+  // Growth is driven by infectivity and global infection scale.
+  const globalScale = clamp01(Math.log10(1 + state.infected) / 10);
+  const rate = (0.004 + state.infectivity * 0.014 + globalScale * 0.01) * dtDays;
+
+  for (const [iso2, entry] of infectedCountries.entries()) {
+    const level = clamp01(entry.level + rate * (1 - entry.level));
+    infectedCountries.set(iso2, { level });
+  }
+}
+
+function updateCountryShading() {
+  if (shadedCountries.size === 0) return;
+
+  for (const iso2 of shadedCountries) {
+    const layer = countriesByIso2.get(iso2);
+    const entry = infectedCountries.get(iso2);
+    if (!layer || !entry) continue;
+
+    // Combine per-country infection level with global scale.
+    const globalIntensity = clamp01(Math.log10(1 + state.infected) / 8);
+    const intensity = clamp01(entry.level * (0.35 + globalIntensity * 0.9));
+    layer.setStyle(infectedCountryStyle(intensity));
+  }
 }
 
 async function loadCountriesLayer() {
@@ -356,20 +568,141 @@ async function loadCountriesLayer() {
     onEachFeature: (feature, layer) => {
       const iso2 = feature?.properties?.ISO_A2;
       if (iso2 && typeof iso2 === "string") {
-        countriesByIso2.set(iso2.toUpperCase(), layer);
+        const key = iso2.toUpperCase();
+        countriesByIso2.set(key, layer);
+        try {
+          countryCentroidsByIso2.set(key, layer.getBounds().getCenter());
+        } catch {
+          // Ignore invalid geometries
+        }
       }
     },
   }).addTo(map);
 }
 
-function selectCountryByIso2(iso2) {
-  if (!iso2) return;
-  const layer = countriesByIso2.get(String(iso2).toUpperCase());
-  if (!layer) return;
+function getAllCountryIso2() {
+  return Array.from(countriesByIso2.keys());
+}
 
-  unselectCountryLayer();
-  selectedCountryLeafletLayer = layer;
-  updateSelectedCountryShade();
+// --- Travel (planes/boats) ---
+const travelRoutes = new Set();
+let travelAnimHandle = null;
+let lastPlaneDay = 0;
+let lastBoatDay = 0;
+
+function travelSvg(type) {
+  const stroke = "rgba(233, 236, 245, 0.9)";
+  const accent = "rgba(139, 92, 246, 0.95)";
+
+  if (type === "plane") {
+    return `
+      <div class="travelIcon travelIcon--plane" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M2 13l20-6-6 8-4 1-2 6-2-8-6-1Z" stroke="${accent}" stroke-width="2" stroke-linejoin="round"/>
+          <path d="M10 14l4-1" stroke="${stroke}" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </div>`;
+  }
+
+  return `
+    <div class="travelIcon travelIcon--boat" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M4 14h16l-2 6H6l-2-6Z" stroke="${accent}" stroke-width="2" stroke-linejoin="round"/>
+        <path d="M8 14V6l4 3 4-3v8" stroke="${stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>`;
+}
+
+function makeTravelIcon(type) {
+  return L.divIcon({
+    className: "",
+    html: travelSvg(type),
+    iconSize: [22, 22],
+    iconAnchor: [11, 11],
+  });
+}
+
+function startTravelLoop() {
+  if (travelAnimHandle) return;
+
+  const tick = () => {
+    const now = performance.now();
+    for (const route of Array.from(travelRoutes)) {
+      const t = clamp01((now - route.startMs) / route.durationMs);
+      route.marker.setLatLng(lerpLatLng(route.from, route.to, t));
+      if (t >= 1) {
+        route.marker.remove();
+        travelRoutes.delete(route);
+        infectCountry(route.toIso2, 0.14, true);
+        updateUI();
+      }
+    }
+    travelAnimHandle = requestAnimationFrame(tick);
+  };
+
+  travelAnimHandle = requestAnimationFrame(tick);
+}
+
+function stopTravelLoop() {
+  if (travelAnimHandle) cancelAnimationFrame(travelAnimHandle);
+  travelAnimHandle = null;
+  for (const route of travelRoutes) {
+    route.marker.remove();
+  }
+  travelRoutes.clear();
+  lastPlaneDay = 0;
+  lastBoatDay = 0;
+}
+
+function trySpawnTravel() {
+  if (!state.running) return;
+  if (infectedCountries.size === 0) return;
+  if (countriesByIso2.size === 0) return;
+
+  const allIso2 = getAllCountryIso2();
+  if (allIso2.length === 0) return;
+
+  const infectedList = Array.from(infectedCountries.keys());
+  const sourceIso2 = pickRandom(infectedList);
+
+  let destIso2 = null;
+  for (let i = 0; i < 12; i++) {
+    const cand = pickRandom(allIso2);
+    if (!infectedCountries.has(cand)) {
+      destIso2 = cand;
+      break;
+    }
+  }
+  if (!destIso2) destIso2 = pickRandom(allIso2);
+
+  const from = countryCentroidsByIso2.get(sourceIso2) ?? L.latLng((Math.random() * 140) - 70, (Math.random() * 360) - 180);
+  const to = countryCentroidsByIso2.get(destIso2) ?? L.latLng((Math.random() * 140) - 70, (Math.random() * 360) - 180);
+
+  const nowDay = state.days;
+  const shouldPlane = nowDay - lastPlaneDay >= TRAVEL_PLANE_EVERY_DAYS;
+  const shouldBoat = nowDay - lastBoatDay >= TRAVEL_BOAT_EVERY_DAYS;
+
+  // Spawn at most one per tick.
+  let type = null;
+  if (shouldPlane) type = "plane";
+  else if (shouldBoat) type = "boat";
+  else return;
+
+  if (type === "plane") lastPlaneDay = nowDay;
+  if (type === "boat") lastBoatDay = nowDay;
+
+  const marker = L.marker(from, { icon: makeTravelIcon(type), interactive: false }).addTo(map);
+  travelRoutes.add({
+    type,
+    from,
+    to,
+    toIso2: destIso2,
+    marker,
+    startMs: performance.now(),
+    durationMs: type === "plane" ? TRAVEL_PLANE_DURATION_MS : TRAVEL_BOAT_DURATION_MS,
+  });
+
+  startTravelLoop();
 }
 
 function spawnMutationPoint() {
@@ -379,17 +712,33 @@ function spawnMutationPoint() {
   const lat = (Math.random() * 140) - 70; // -70..70
   const lng = (Math.random() * 360) - 180; // -180..180
 
-  const marker = L.circleMarker([lat, lng], {
-    radius: 10,
-    color: "#8b5cf6",
-    weight: 2,
-    fillColor: "#8b5cf6",
-    fillOpacity: 0.35,
-  }).addTo(map);
+  const svg = `
+    <div class="dnaMarker" aria-label="Mutation point">
+      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path class="dnaGlow" d="M8 4c4 0 8 4 8 8s-4 8-8 8" stroke="rgba(139, 92, 246, 0.95)" stroke-width="2" stroke-linecap="round"/>
+        <path class="dnaGlow" d="M16 4c-4 0-8 4-8 8s4 8 8 8" stroke="rgba(233, 236, 245, 0.85)" stroke-width="2" stroke-linecap="round"/>
+        <path d="M9 7h6M9 11h6M9 15h6M9 19h6" stroke="rgba(233, 236, 245, 0.55)" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+    </div>`;
+
+  const icon = L.divIcon({
+    className: "",
+    html: svg,
+    iconSize: [26, 26],
+    iconAnchor: [13, 13],
+  });
+
+  const marker = L.marker([lat, lng], { icon }).addTo(map);
 
   marker.bindTooltip("Mutation point (+1 MP)", { direction: "top" });
 
+  const ttl = window.setTimeout(() => {
+    marker.remove();
+    mutationMarkers.delete(marker);
+  }, MUTATION_POINT_TTL_MS);
+
   marker.on("click", () => {
+    window.clearTimeout(ttl);
     state.mp += 1;
     marker.remove();
     mutationMarkers.delete(marker);
@@ -414,11 +763,14 @@ function initMap() {
     zoomControl: true,
   }).setView([20, 0], 2);
 
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  tileLayer = L.tileLayer(TILE_STYLES.osm.url, {
     maxZoom: 6,
     minZoom: 2,
-    attribution: "© OpenStreetMap contributors",
+    attribution: TILE_STYLES.osm.attribution,
   }).addTo(map);
+
+  // Keep attribution visible in our UI.
+  document.querySelector(".mapAttribution").textContent = TILE_STYLES.osm.attribution;
 
   // Load country polygons for tinting (best-effort).
   loadCountriesLayer().catch((err) => {
@@ -450,13 +802,30 @@ function initMap() {
       }
 
       if (countryCode) {
-        selectCountryByIso2(countryCode);
+        // Preview a small infection tint for the chosen start country.
+        infectCountry(countryCode, 0.04, false);
+        updateUI();
       }
     } catch (err) {
       console.warn("Reverse geocode failed:", err);
       $("start-coords").textContent = `${lat.toFixed(2)}, ${lng.toFixed(2)}`;
     }
   });
+}
+
+function setMapStyle(styleKey) {
+  const style = TILE_STYLES[styleKey] ?? TILE_STYLES.osm;
+  if (!map) return;
+
+  if (tileLayer) tileLayer.remove();
+  tileLayer = L.tileLayer(style.url, {
+    maxZoom: 6,
+    minZoom: 2,
+    attribution: style.attribution,
+  }).addTo(map);
+
+  const attrEl = document.querySelector(".mapAttribution");
+  if (attrEl) attrEl.textContent = style.attribution;
 }
 
 // --- Simulation loop ---
@@ -472,13 +841,19 @@ function startSimulation() {
   state.dead = 0;
   state.cured = 0;
   state.cureProgress = 0;
+  state.days = 0;
+
+  // Ensure origin country shows infection, and travel can start from it.
+  if (state.startCountryCode) {
+    infectCountry(state.startCountryCode, 0.18, false);
+  }
 
   $("btn-start").disabled = true;
   $("start-hint").textContent = "Simulation running. Collect mutation points on the map.";
 
   // Every second: advance the toy model
   state.tickHandle = window.setInterval(() => {
-    stepSimulation(1.0);
+    stepSimulation(SECONDS_PER_DAY);
   }, 1000);
 
   // Mutation points appear periodically
@@ -491,6 +866,14 @@ function startSimulation() {
 
 function stepSimulation(dtSeconds) {
   computeTraits();
+
+  state.days += dtSeconds;
+
+  if (state.days >= TIME_LIMIT_DAYS) {
+    stopSimulation("Time's up: the world holds out.");
+    updateUI();
+    return;
+  }
 
   const pop = state.population;
   const susceptible = Math.max(0, pop - state.infected - state.dead - state.cured);
@@ -525,6 +908,10 @@ function stepSimulation(dtSeconds) {
   const infectionScale = Math.log10(1 + state.infected) / 10; // 0..~1
   state.mp += (baseMp + infectionScale) * 0.06 * dtSeconds;
 
+  // Spread infection to other countries via travel routes.
+  tickCountryInfections(dtSeconds);
+  trySpawnTravel();
+
   updateUI();
 
   // Win/lose-ish stop conditions
@@ -541,6 +928,8 @@ function stopSimulation(message) {
   if (state.pointHandle) window.clearInterval(state.pointHandle);
   state.tickHandle = null;
   state.pointHandle = null;
+
+  stopTravelLoop();
 
   $("start-hint").textContent = message;
   $("btn-start").disabled = true;
@@ -578,6 +967,13 @@ function initUI() {
       updateUI();
     });
   });
+
+  const mapStyleSel = $("map-style");
+  if (mapStyleSel) {
+    mapStyleSel.addEventListener("change", () => {
+      setMapStyle(mapStyleSel.value);
+    });
+  }
 }
 
 function boot() {
